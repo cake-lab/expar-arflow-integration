@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""A simple example of extending the ARFlow server."""
-
-# TODO: increase RGB size.
-
+"""Core library."""
 
 import json
 import base64
@@ -75,18 +71,16 @@ class CustomService(arflow.ARFlowService):
         obj_transform = unity_to_right_handed(obj_transform)
         obj_pos = obj_transform[:3, 3].tolist()
 
-        # print("Object position:", obj_pos)
-        # self.recorder.log(
-        #     "arflow/obj", self.recorder.Points3D(obj_pos, colors=[255, 0, 0], radii=0.3)
-        # )
-
         metadata["objPosition"] = obj_pos
 
+        rx = request.camera_color.resize_factor_x
+        ry = request.camera_color.resize_factor_y
+
         intrinsics = [
-            request.camera_intrinsics.focal_length_x,  # * 0.25,
-            request.camera_intrinsics.focal_length_y,  # * 0.1875,
-            request.camera_intrinsics.principal_point_x,  # * 0.25,
-            request.camera_intrinsics.principal_point_y,  # * 0.1875,
+            request.camera_intrinsics.focal_length_x * rx,
+            request.camera_intrinsics.focal_length_y * ry,
+            request.camera_intrinsics.principal_point_x * rx,
+            request.camera_intrinsics.principal_point_y * ry,
         ]
         self.cam_intrinsics = np.array(
             [
@@ -95,7 +89,6 @@ class CustomService(arflow.ARFlowService):
                 [0, 0, 1],
             ]
         )
-        # print(self.cam_intrinsics)
 
         self.rgb_resolution = (
             request.camera_depth.resolution_x,
@@ -131,31 +124,23 @@ class CustomService(arflow.ARFlowService):
             transform: npt.NDArray = decoded_frame_data["transform"]
 
             t = unity_to_right_handed(transform)
-            # t = transform
-
-            t = t.T  # VERY IMPORTANT
+            t = np.transpose(t)  # VERY IMPORTANT
 
             metadata["pose4x4"] = t.flatten().tolist()
-
             metadata["resolution"] = self.rgb_resolution
             metadata["depthResolution"] = self.rgb_resolution
+
+            rgb_img = base64.b64encode(color_rgb.tobytes()).decode("utf-8")
+            depth_data = base64.b64encode(depth_img.tobytes()).decode("utf-8")
 
             frame_msg = {
                 "type": "frame",
                 "metadata": metadata,
                 "rgbResolution": self.rgb_resolution,
-                "rgbImage": base64.b64encode(color_rgb.tobytes()).decode("utf-8"),
-                "depthData": base64.b64encode(depth_img.tobytes()).decode("utf-8"),
+                "rgbImage": rgb_img,
+                "depthData": depth_data,
             }
 
             self.ws.send(json.dumps(frame_msg))
         except Exception as e:
             print(e)
-
-
-def main():
-    arflow.create_server(CustomService, port=8500, path_to_save=None)
-
-
-if __name__ == "__main__":
-    main()
